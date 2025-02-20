@@ -147,7 +147,14 @@ impl FileView {
 
     pub fn display(&self, stdout: &mut io::Stdout) -> io::Result<()> {
         queue!(stdout, MoveTo(0, 0), Clear(ClearType::All))?;
-        println!("{}", String::from_utf8_lossy(self.file.buffer()).replace('\n', &" ".on_dark_grey().to_string()));
+        let buf = self.file.buffer();
+        let chunks = buf.chunks(16);
+        let lines = chunks.map(|c| {
+            let str = String::from_utf8_lossy(c);
+            let str = str.replace('\n', &" ".on_dark_grey().to_string());
+            str + "\r\n"
+        });
+        println!("{}", lines.collect::<String>());
         let x = match self.panel {
             Panel::Hex => self.cursor.0 * 3,
             Panel::Ascii => 16 * 3 + 1 + self.cursor.0,
