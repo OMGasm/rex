@@ -1,15 +1,16 @@
+mod view;
 use clap::Parser;
 use crossterm::{
-    cursor::MoveTo, event::{self, Event}, execute, queue, style::Stylize, terminal::{
-        disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen,
-        LeaveAlternateScreen,
-    }
+    event::{self, Event, KeyCode, KeyEvent},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use std::{
     fs::File,
     io::{self, BufRead, BufReader},
     path::PathBuf,
 };
+use view::{FileView, PanelMovement};
 
 #[derive(Parser, Debug)]
 struct CliArgs {
@@ -18,7 +19,6 @@ struct CliArgs {
 
 fn main() -> io::Result<()> {
     let args = CliArgs::parse();
-    eprintln!("Hello, world!\n{:?}", args);
     let file = File::open(args.file).expect("File not found");
     let rows = 10;
     let mut file = BufReader::with_capacity(rows * 16, file);
@@ -43,125 +43,68 @@ fn main() -> io::Result<()> {
 
 fn loopy(stdout: &mut std::io::Stdout, view: &mut FileView) -> io::Result<()> {
     loop {
-        let (ref mut cx, ref mut cy) = view.cursor;
         let event = event::read()?;
-        if event == Event::Key(event::KeyCode::Left.into()) {
-            if *cx == 0 {
-                *cx = 15;
-                view.panel.switch();
-            } else {
-                *cx -= 1;
+        match event {
+            Event::Key(KeyEvent {
+                code: KeyCode::Left,
+                ..
+            }) => {
+                if let view::CursorMovement::StuckEdge = view.cursor_left() {
+                    view.switch_panel(PanelMovement::RightEdge);
+                }
             }
-        }
-        if event == Event::Key(event::KeyCode::Down.into()) {
-            if *cy == view.rows - 1 {
-                view.file.seek_relative(16)?;
-                view.file.fill_buf()?;
-            } else {
-                *cy += 1;
+            Event::Key(KeyEvent {
+                code: KeyCode::Down,
+                ..
+            }) => {
+                view.scroll_down()?;
             }
-        }
-        if event == Event::Key(event::KeyCode::Up.into()) {
-            if *cy == 0 {
-                view.file.seek_relative(-16)?;
-                view.file.fill_buf()?;
-            } else {
-                *cy -= 1;
+            Event::Key(KeyEvent {
+                code: KeyCode::Up, ..
+            }) => {
+                view.scroll_up()?;
             }
-        }
-        if event == Event::Key(event::KeyCode::Right.into()) {
-            if *cx == 15 {
-                *cx = 0;
-                view.panel.switch();
-            } else {
-                *cx += 1;
+            Event::Key(KeyEvent {
+                code: KeyCode::Right,
+                ..
+            }) => {
+                if let view::CursorMovement::StuckEdge = view.cursor_right() {
+                    view.switch_panel(PanelMovement::LeftEdge);
+                }
             }
-        }
 
-        if event
-            == Event::Key(event::KeyEvent::new(
-                event::KeyCode::Char('c'),
-                event::KeyModifiers::CONTROL,
-            ))
-        {
-            execute!(stdout, LeaveAlternateScreen)?;
-            disable_raw_mode()?;
-            eprintln!("Exited via break.");
-            std::process::exit(0);
-        }
-        if event == Event::Key(event::KeyCode::Char('q').into()) {
-            break;
-        }
-        if event == Event::Key(event::KeyCode::Esc.into()) {
-            break;
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('c'),
+                modifiers: event::KeyModifiers::CONTROL,
+                ..
+            }) => {
+                execute!(stdout, LeaveAlternateScreen)?;
+                disable_raw_mode()?;
+                eprintln!("Exited via break.");
+                std::process::exit(0);
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('q'),
+                ..
+            }) => {
+                break;
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Esc, ..
+            }) => {
+                break;
+            }
+            Event::FocusGained => {}
+            Event::FocusLost => {}
+            Event::Mouse(_) => {}
+            Event::Paste(_) => {}
+            Event::Resize(_, _) => {}
+            Event::Key(_) => {}
         }
 
         view.display(stdout)?;
     }
     Ok(())
-}
-
-#[derive(Debug)]
-struct FileView {
-    file: BufReader<File>,
-    bytes_per_group: u8,
-    groups_per_row: u8,
-    rows: u8,
-    cursor: (u8, u8),
-    panel: Panel,
-}
-
-#[derive(Debug)]
-enum Panel {
-    Hex,
-    Ascii,
-}
-
-impl Panel {
-    fn switch(&mut self) {
-        *self = match *self {
-            Self::Hex => Self::Ascii,
-            Self::Ascii => Self::Hex,
-        };
-    }
-
-    fn current(&self) -> Self {
-        match *self {
-            Panel::Hex => Self::Hex,
-            Panel::Ascii => Self::Ascii,
-        }
-    }
-}
-
-impl FileView {
-    pub fn new(file: BufReader<File>) -> FileView {
-        FileView {
-            file,
-            bytes_per_group: 8,
-            groups_per_row: 2,
-            cursor: (0, 0),
-            panel: Panel::Ascii,
-            rows: 10,
-        }
-    }
-
-    pub fn display(&self, stdout: &mut io::Stdout) -> io::Result<()> {
-        queue!(stdout, MoveTo(0, 0), Clear(ClearType::All))?;
-        let buf = self.file.buffer();
-        let chunks = buf.chunks(16);
-        let lines = chunks.map(|c| {
-            let str = String::from_utf8_lossy(c);
-            let str = str.replace('\n', &" ".on_dark_grey().to_string());
-            str + "\r\n"
-        });
-        println!("{}", lines.collect::<String>());
-        let x = match self.panel {
-            Panel::Hex => self.cursor.0 * 3,
-            Panel::Ascii => 16 * 3 + 1 + self.cursor.0,
-        };
-        execute!(stdout, MoveTo(x.into(), self.cursor.1.into()))?;
-        Ok(())
-    }
 }
 
 #[cfg(test)]
