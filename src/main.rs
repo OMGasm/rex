@@ -1,12 +1,9 @@
 use clap::Parser;
 use crossterm::{
-    cursor::MoveTo,
-    event::{self, Event},
-    execute, queue,
-    terminal::{
+    cursor::MoveTo, event::{self, Event}, execute, queue, style::Stylize, terminal::{
         disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen,
         LeaveAlternateScreen,
-    },
+    }
 };
 use std::{
     fs::File,
@@ -150,7 +147,7 @@ impl FileView {
 
     pub fn display(&self, stdout: &mut io::Stdout) -> io::Result<()> {
         queue!(stdout, MoveTo(0, 0), Clear(ClearType::All))?;
-        println!("{}", String::from_utf8_lossy(self.file.buffer()));
+        println!("{}", String::from_utf8_lossy(self.file.buffer()).replace('\n', &" ".on_dark_grey().to_string()));
         let x = match self.panel {
             Panel::Hex => self.cursor.0 * 3,
             Panel::Ascii => 16 * 3 + 1 + self.cursor.0,
