@@ -52,30 +52,35 @@ impl FileView {
             }
             write!(stdout, " ")?;
         }
-        write!(stdout, "ASCII\r\n\n")?;
+        write!(stdout, " ASCII\r\n\n")?;
         for (l, c) in chunks.enumerate() {
             write!(stdout, "{:08X}: ", l + self.buffer_cursor_line as usize)?;
             for c in c.chunks(self.bytes_per_group.into()) {
-                for c in c.iter().skip(1) {
+                for c in c.iter() {
                     write!(stdout, " {c:02X}")?;
                 }
+                write!(stdout, " ")?;
             }
 
             let str = String::from_utf8_lossy(c);
             let str = str.replace('\n', &" ".on_dark_grey().to_string());
-            write!(stdout, "\x08|{}|\r\n", str)?;
+            write!(stdout, "|{}|\r\n", str)?;
         }
         let (cx, cy) = self.view_cursor;
         let x = match self.panel {
-            Panel::Hex => cx * 3,
-            Panel::Ascii => bpr * 3 + divs + 1 + cx,
+            Panel::Hex => cx * 3 + 8 + 3 + cx / self.bytes_per_group,
+            Panel::Ascii => 8 + 3 + bpr * 3 + divs + 1 + cx,
         };
         write!(
             stdout,
             "{:08X}: ",
-            self.buffer_cursor_line as u64 * bpr as u64
+            self.buffer_cursor_line as u64 * bpr as u64 + cy as u64
         )?;
-        execute!(stdout, MoveTo(x.into(), cy.into()), EndSynchronizedUpdate)?;
+        execute!(
+            stdout,
+            MoveTo(x.into(), 2 + cy as u16),
+            EndSynchronizedUpdate
+        )?;
         Ok(())
     }
 
