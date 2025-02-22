@@ -53,7 +53,7 @@ impl FileView {
         self.panel.switch();
         match move_type {
             PanelMovement::LeftEdge => self.view_cursor.0 = 0,
-            PanelMovement::RightEdge => self.view_cursor.0 = self.bytes_per_group * self.groups_per_row,
+            PanelMovement::RightEdge => self.view_cursor.0 = self.bytes_per_group * self.groups_per_row - 1,
             PanelMovement::KeepCursor => {},
         }
     }
