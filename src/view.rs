@@ -2,7 +2,7 @@ use crossterm::{
     cursor::MoveTo,
     execute, queue,
     style::Stylize,
-    terminal::{Clear, ClearType},
+    terminal::{BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate},
 };
 use std::{
     fs::File,
@@ -34,25 +34,48 @@ impl FileView {
     }
 
     pub fn display(&self, stdout: &mut io::Stdout) -> io::Result<()> {
-        queue!(stdout, MoveTo(0, 0), Clear(ClearType::All))?;
+        use std::io::Write;
+        let bpr = self.bytes_per_group * self.groups_per_row;
+        let divs = self.groups_per_row - 1;
+        queue!(
+            stdout,
+            BeginSynchronizedUpdate,
+            MoveTo(0, 0),
+            Clear(ClearType::All)
+        )?;
         let buf = self.file.buffer();
-        let chunks = buf.chunks(16);
-        for c in chunks {
-            let str = String::from_utf8_lossy(c);
-            let str = str.replace('\n', &" ".on_dark_grey().to_string());
-            use std::io::Write;
-            write!(stdout, "{:02X}", c[0])?;
-            for c in c.iter().skip(1) {
-                write!(stdout, " {c:02X}")?;
+        let chunks = buf.chunks(bpr.into());
+        write!(stdout, "{}", " ".repeat(8 + 2))?;
+        for g in 0..self.groups_per_row {
+            for x in 0..self.bytes_per_group {
+                write!(stdout, " {:02X}", self.bytes_per_group * g + x)?;
+            }
+            write!(stdout, " ")?;
+        }
+        write!(stdout, "ASCII\r\n\n")?;
+        for (l, c) in chunks.enumerate() {
+            write!(stdout, "{:08X}: ", l + self.buffer_cursor_line as usize)?;
+            for c in c.chunks(self.bytes_per_group.into()) {
+                for c in c.iter().skip(1) {
+                    write!(stdout, " {c:02X}")?;
+                }
             }
 
-            write!(stdout, " |{}|\r\n", str)?;
+            let str = String::from_utf8_lossy(c);
+            let str = str.replace('\n', &" ".on_dark_grey().to_string());
+            write!(stdout, "\x08|{}|\r\n", str)?;
         }
+        let (cx, cy) = self.view_cursor;
         let x = match self.panel {
-            Panel::Hex => self.view_cursor.0 * 3,
-            Panel::Ascii => 16 * 3 + 1 + self.view_cursor.0,
+            Panel::Hex => cx * 3,
+            Panel::Ascii => bpr * 3 + divs + 1 + cx,
         };
-        execute!(stdout, MoveTo(x.into(), self.view_cursor.1.into()))?;
+        write!(
+            stdout,
+            "{:08X}: ",
+            self.buffer_cursor_line as u64 * bpr as u64
+        )?;
+        execute!(stdout, MoveTo(x.into(), cy.into()), EndSynchronizedUpdate)?;
         Ok(())
     }
 
@@ -81,7 +104,7 @@ impl FileView {
     }
 
     pub fn cursor_right(&mut self) -> CursorMovement {
-        if self.view_cursor.0 == 15 {
+        if self.view_cursor.0 == self.bytes_per_group * self.groups_per_row - 1 {
             CursorMovement::StuckEdge
         } else {
             self.view_cursor.0 += 1;
@@ -94,8 +117,11 @@ impl FileView {
         let pos = self.file.stream_position()?;
         if *y == self.rows - 1 {
             self.file.rewind()?;
-            self.file.seek(SeekFrom::Start(pos + 16))?;
+            self.file.seek(SeekFrom::Start(
+                pos + self.bytes_per_group as u64 * self.groups_per_row as u64,
+            ))?;
             self.file.fill_buf()?;
+            self.buffer_cursor_line += 1;
         } else {
             *y += 1;
         }
@@ -105,8 +131,12 @@ impl FileView {
     pub fn scroll_up(&mut self) -> io::Result<()> {
         let (_, ref mut y) = self.view_cursor;
         if *y == 0 {
-            self.file.seek_relative(-16)?;
+            let pos = self.file.stream_position()?;
+            let bpr = self.bytes_per_group * self.groups_per_row;
+            self.file
+                .seek(SeekFrom::Start(pos.saturating_sub(bpr as u64)))?;
             self.file.fill_buf()?;
+            self.buffer_cursor_line = self.buffer_cursor_line.saturating_sub(1);
         } else {
             *y -= 1;
         }
