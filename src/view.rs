@@ -1,6 +1,13 @@
-use std::{fs::File, io::{self, BufRead, BufReader}};
-use crossterm::{cursor::MoveTo, execute, queue, style::Stylize, terminal::{Clear, ClearType}};
-
+use crossterm::{
+    cursor::MoveTo,
+    execute, queue,
+    style::Stylize,
+    terminal::{Clear, ClearType},
+};
+use std::{
+    fs::File,
+    io::{self, BufRead, BufReader, Seek, SeekFrom},
+};
 
 #[derive(Debug)]
 pub struct FileView {
@@ -53,8 +60,10 @@ impl FileView {
         self.panel.switch();
         match move_type {
             PanelMovement::LeftEdge => self.view_cursor.0 = 0,
-            PanelMovement::RightEdge => self.view_cursor.0 = self.bytes_per_group * self.groups_per_row - 1,
-            PanelMovement::KeepCursor => {},
+            PanelMovement::RightEdge => {
+                self.view_cursor.0 = self.bytes_per_group * self.groups_per_row - 1
+            }
+            PanelMovement::KeepCursor => {}
         }
     }
 
