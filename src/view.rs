@@ -16,7 +16,7 @@ pub struct FileView {
     groups_per_row: u8,
     rows: u8,
     view_cursor: (u8, u8),
-    buffer_cursor_line: u8,
+    buffer_cursor_line: u64,
     panel: Panel,
 }
 
