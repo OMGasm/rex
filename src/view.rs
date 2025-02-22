@@ -30,12 +30,17 @@ impl FileView {
         queue!(stdout, MoveTo(0, 0), Clear(ClearType::All))?;
         let buf = self.file.buffer();
         let chunks = buf.chunks(16);
-        let lines = chunks.map(|c| {
+        for c in chunks {
             let str = String::from_utf8_lossy(c);
             let str = str.replace('\n', &" ".on_dark_grey().to_string());
-            str + "\r\n"
-        });
-        println!("{}", lines.collect::<String>());
+            use std::io::Write;
+            write!(stdout, "{:02X}", c[0])?;
+            for c in c.iter().skip(1) {
+                write!(stdout, " {c:02X}")?;
+            }
+
+            write!(stdout, " |{}|\r\n", str)?;
+        }
         let x = match self.panel {
             Panel::Hex => self.view_cursor.0 * 3,
             Panel::Ascii => 16 * 3 + 1 + self.view_cursor.0,
