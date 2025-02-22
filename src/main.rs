@@ -3,7 +3,9 @@ use clap::Parser;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{
+        disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, SetTitle,
+    },
 };
 use std::{
     fs::File,
@@ -19,7 +21,7 @@ struct CliArgs {
 
 fn main() -> io::Result<()> {
     let args = CliArgs::parse();
-    let file = File::open(args.file).expect("File not found");
+    let file = File::open(&args.file).expect("File not found");
     let rows = 10;
     let mut file = BufReader::with_capacity(rows * 16, file);
     file.fill_buf()?;
@@ -28,7 +30,11 @@ fn main() -> io::Result<()> {
     let mut stdout = io::stdout();
 
     enable_raw_mode()?;
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        SetTitle(format!("Rex: {}", args.file.to_string_lossy()))
+    )?;
 
     view.display(&mut stdout)?;
     let res = loopy(&mut stdout, &mut view);
@@ -105,7 +111,6 @@ fn loopy(stdout: &mut std::io::Stdout, view: &mut FileView) -> io::Result<()> {
             Event::Resize(_, _) => {}
             Event::Key(_) => {}
         }
-
         view.display(stdout)?;
     }
     Ok(())
