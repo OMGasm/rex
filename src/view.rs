@@ -82,8 +82,10 @@ impl FileView {
 
     pub fn scroll_down(&mut self) -> io::Result<()> {
         let (_, ref mut y) = self.view_cursor;
+        let pos = self.file.stream_position()?;
         if *y == self.rows - 1 {
-            self.file.seek_relative(16)?;
+            self.file.rewind()?;
+            self.file.seek(SeekFrom::Start(pos + 16))?;
             self.file.fill_buf()?;
         } else {
             *y += 1;
