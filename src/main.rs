@@ -94,6 +94,10 @@ fn loopy(stdout: &mut std::io::Stdout, view: &mut FileView) -> io::Result<()> {
             }) => {
                 break;
             }
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('s'),
+                ..
+            }) => view.switch_panel(PanelMovement::KeepCursor),
             Event::FocusGained => {}
             Event::FocusLost => {}
             Event::Mouse(_) => {}
