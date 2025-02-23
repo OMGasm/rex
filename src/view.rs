@@ -1,3 +1,5 @@
+#![deny(clippy::nursery, clippy::perf, clippy::pedantic)]
+
 use crossterm::{
     cursor::MoveTo,
     execute, queue,
@@ -21,8 +23,8 @@ pub struct FileView {
 }
 
 impl FileView {
-    pub fn new(file: BufReader<File>) -> FileView {
-        FileView {
+    pub fn new(file: BufReader<File>) -> Self {
+        Self {
             file,
             bytes_per_group: 8,
             groups_per_row: 2,
@@ -54,9 +56,9 @@ impl FileView {
         }
         write!(stdout, " ASCII\r\n\n")?;
         for (l, c) in chunks.enumerate() {
-            write!(stdout, "{:08X}: ", l + self.buffer_cursor_line as usize)?;
+            write!(stdout, "{:08X}: ", l as u64 + self.buffer_cursor_line)?;
             for c in c.chunks(self.bytes_per_group.into()) {
-                for c in c.iter() {
+                for c in c {
                     write!(stdout, " {c:02X}")?;
                 }
                 write!(stdout, " ")?;
@@ -64,7 +66,7 @@ impl FileView {
 
             let str = String::from_utf8_lossy(c);
             let str = str.replace('\n', &" ".on_dark_grey().to_string());
-            write!(stdout, "|{}|\r\n", str)?;
+            write!(stdout, "|{str}|\r\n")?;
         }
         let (cx, cy) = self.view_cursor;
         let x = match self.panel {
@@ -74,29 +76,25 @@ impl FileView {
         write!(
             stdout,
             "{:08X}: ",
-            self.buffer_cursor_line as u64 * bpr as u64 + cy as u64
+            self.buffer_cursor_line * u64::from(bpr) + u64::from(cy)
         )?;
         execute!(
             stdout,
-            MoveTo(x.into(), 2 + cy as u16),
+            MoveTo(x.into(), 2 + u16::from(cy)),
             EndSynchronizedUpdate
         )?;
         Ok(())
     }
 
-    pub fn switch_panel(&mut self, move_type: PanelMovement) {
+    pub fn switch_panel(&mut self, move_type: &PanelMovement) {
         self.panel.switch();
         match move_type {
             PanelMovement::LeftEdge => self.view_cursor.0 = 0,
             PanelMovement::RightEdge => {
-                self.view_cursor.0 = self.bytes_per_group * self.groups_per_row - 1
+                self.view_cursor.0 = self.bytes_per_group * self.groups_per_row - 1;
             }
             PanelMovement::KeepCursor => {}
         }
-    }
-
-    pub fn cursor(&mut self) -> &mut (u8, u8) {
-        &mut self.view_cursor
     }
 
     pub fn cursor_left(&mut self) -> CursorMovement {
@@ -123,7 +121,7 @@ impl FileView {
         if *y == self.rows - 1 {
             self.file.rewind()?;
             self.file.seek(SeekFrom::Start(
-                pos + self.bytes_per_group as u64 * self.groups_per_row as u64,
+                pos + u64::from(self.bytes_per_group) * u64::from(self.groups_per_row),
             ))?;
             self.file.fill_buf()?;
             self.buffer_cursor_line += 1;
@@ -139,7 +137,7 @@ impl FileView {
             let pos = self.file.stream_position()?;
             let bpr = self.bytes_per_group * self.groups_per_row;
             self.file
-                .seek(SeekFrom::Start(pos.saturating_sub(bpr as u64)))?;
+                .seek(SeekFrom::Start(pos.saturating_sub(u64::from(bpr))))?;
             self.file.fill_buf()?;
             self.buffer_cursor_line = self.buffer_cursor_line.saturating_sub(1);
         } else {
@@ -161,13 +159,6 @@ impl Panel {
             Self::Hex => Self::Ascii,
             Self::Ascii => Self::Hex,
         };
-    }
-
-    pub fn current(&self) -> Self {
-        match *self {
-            Panel::Hex => Self::Hex,
-            Panel::Ascii => Self::Ascii,
-        }
     }
 }
 

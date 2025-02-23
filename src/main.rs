@@ -56,7 +56,7 @@ fn loopy(stdout: &mut std::io::Stdout, view: &mut FileView) -> io::Result<()> {
                 ..
             }) => {
                 if let view::CursorMovement::StuckEdge = view.cursor_left() {
-                    view.switch_panel(PanelMovement::RightEdge);
+                    view.switch_panel(&PanelMovement::RightEdge);
                 }
             }
             Event::Key(KeyEvent {
@@ -75,7 +75,7 @@ fn loopy(stdout: &mut std::io::Stdout, view: &mut FileView) -> io::Result<()> {
                 ..
             }) => {
                 if let view::CursorMovement::StuckEdge = view.cursor_right() {
-                    view.switch_panel(PanelMovement::LeftEdge);
+                    view.switch_panel(&PanelMovement::LeftEdge);
                 }
             }
 
@@ -103,7 +103,7 @@ fn loopy(stdout: &mut std::io::Stdout, view: &mut FileView) -> io::Result<()> {
             Event::Key(KeyEvent {
                 code: KeyCode::Char('s'),
                 ..
-            }) => view.switch_panel(PanelMovement::KeepCursor),
+            }) => view.switch_panel(&PanelMovement::KeepCursor),
             Event::FocusGained => {}
             Event::FocusLost => {}
             Event::Mouse(_) => {}
