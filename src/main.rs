@@ -23,6 +23,7 @@ fn main() -> io::Result<()> {
     let args = CliArgs::parse();
     let file = File::open(&args.file).expect("File not found");
     let rows = 10;
+    let path = std::fs::canonicalize(&args.file)?;
     let mut file = BufReader::with_capacity(rows * 16, file);
     file.fill_buf()?;
     let mut view = FileView::new(file);
@@ -33,7 +34,7 @@ fn main() -> io::Result<()> {
     execute!(
         stdout,
         EnterAlternateScreen,
-        SetTitle(format!("Rex: {}", args.file.to_string_lossy()))
+        SetTitle(format!("Rex: {}", path.display()))
     )?;
 
     view.display(&mut stdout)?;
