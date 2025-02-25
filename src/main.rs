@@ -1,119 +1,41 @@
+mod editor;
+mod input;
 mod view;
+mod file;
+mod panel;
 use clap::Parser;
-use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent},
-    execute,
-    terminal::{
-        disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, SetTitle,
-    },
-};
-use std::{
-    fs::File,
-    io::{self, BufRead, BufReader},
-    path::PathBuf,
-};
-use view::{FileView, PanelMovement};
+use editor::Editor;
+use std::{fs::File, io, path::PathBuf};
 
 #[derive(Parser, Debug)]
 struct CliArgs {
     file: PathBuf,
+    #[arg(default_value_t = 8)]
+    bytes_per_group: u16,
+    #[arg(default_value_t = 2)]
+    groups_per_row: u16,
 }
 
 fn main() -> io::Result<()> {
     let args = CliArgs::parse();
     let file = File::open(&args.file).expect("File not found");
-    let rows = 10;
     let path = std::fs::canonicalize(&args.file)?;
-    let mut file = BufReader::with_capacity(rows * 16, file);
-    file.fill_buf()?;
-    let mut view = FileView::new(file);
 
-    let mut stdout = io::stdout();
+    let mut editor = Editor::new(
+        io::stdout(),
+        editor::Options{
+            bytes_per_group,
+            groups_per_row,
+            .. Default::default()
+        }
+    );
+    editor.open_file(path)?;
 
-    enable_raw_mode()?;
-    execute!(
-        stdout,
-        EnterAlternateScreen,
-        SetTitle(format!("Rex: {}", path.display()))
-    )?;
+    let res = editor.event_loop();
 
-    view.display(&mut stdout)?;
-    let res = loopy(&mut stdout, &mut view);
-
-    execute!(stdout, LeaveAlternateScreen)?;
-    disable_raw_mode()?;
     if let Err(e) = res {
         eprintln!("{e}");
     };
-    Ok(())
-}
-
-fn loopy(stdout: &mut std::io::Stdout, view: &mut FileView) -> io::Result<()> {
-    loop {
-        let event = event::read()?;
-        match event {
-            Event::Key(KeyEvent {
-                code: KeyCode::Left,
-                ..
-            }) => {
-                if let view::CursorMovement::StuckEdge = view.cursor_left() {
-                    view.switch_panel(&PanelMovement::RightEdge);
-                }
-            }
-            Event::Key(KeyEvent {
-                code: KeyCode::Down,
-                ..
-            }) => {
-                view.scroll_down()?;
-            }
-            Event::Key(KeyEvent {
-                code: KeyCode::Up, ..
-            }) => {
-                view.scroll_up()?;
-            }
-            Event::Key(KeyEvent {
-                code: KeyCode::Right,
-                ..
-            }) => {
-                if let view::CursorMovement::StuckEdge = view.cursor_right() {
-                    view.switch_panel(&PanelMovement::LeftEdge);
-                }
-            }
-
-            Event::Key(KeyEvent {
-                code: KeyCode::Char('c'),
-                modifiers: event::KeyModifiers::CONTROL,
-                ..
-            }) => {
-                execute!(stdout, LeaveAlternateScreen)?;
-                disable_raw_mode()?;
-                eprintln!("Exited via break.");
-                std::process::exit(0);
-            }
-            Event::Key(KeyEvent {
-                code: KeyCode::Char('q'),
-                ..
-            }) => {
-                break;
-            }
-            Event::Key(KeyEvent {
-                code: KeyCode::Esc, ..
-            }) => {
-                break;
-            }
-            Event::Key(KeyEvent {
-                code: KeyCode::Char('s'),
-                ..
-            }) => view.switch_panel(&PanelMovement::KeepCursor),
-            Event::FocusGained => {}
-            Event::FocusLost => {}
-            Event::Mouse(_) => {}
-            Event::Paste(_) => {}
-            Event::Resize(_, _) => {}
-            Event::Key(_) => {}
-        }
-        view.display(stdout)?;
-    }
     Ok(())
 }
 
