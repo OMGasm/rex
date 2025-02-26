@@ -1,51 +1,73 @@
-use std::{
-    fs::File,
-    io::{self, BufRead, BufReader, Seek, SeekFrom},
+use crate::{
+    file::{CursorDirection, CursorError, FileCursor},
+    input::TermInput,
+    panel::Panel,
+    stuff::{Position, Size},
 };
-
 use crossterm::{
     cursor::MoveTo,
     execute, queue,
     style::Stylize,
-    terminal::{BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate},
+    terminal::{
+        disable_raw_mode, BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate,
+        LeaveAlternateScreen,
+    },
 };
-
-use crate::{
-    file::{CursorDirection, CursorError, FileCursor},
-    panel::ActivePanel,
-};
+use std::io::{self};
 
 pub struct Editor {
     stdout: io::Stdout,
-    file: Option<FileCursor<BufReader<File>>>,
+    file: Option<FileCursor>,
     hex_panel: Panel,
     ascii_panel: Panel,
     active: ActivePanel,
     options: Options,
-    cursor: (u16, u16),
+    cursor: Position,
 }
 
 #[derive(Debug, Default)]
 pub struct Options {
-    bytes_per_group: u16,
-    groups_per_row: u16,
+    pub bytes_per_group: u16,
+    pub groups_per_row: u16,
 }
 
 impl Editor {
-    pub fn new(mut stdout: io::Stdout, options: Options) -> Self {
+    pub fn new(stdout: io::Stdout, options: Options) -> Self {
+        let Options {
+            bytes_per_group,
+            groups_per_row,
+        } = options;
+        let bpr = bytes_per_group * groups_per_row;
+        let hex_panel = Panel::new((0, 1).into(), (bpr * 3 - 1, 10).into());
+        let hex_bounds = hex_panel.bounds();
+        let ascii_pos = Position::from((hex_bounds.1.x + 1, hex_bounds.0.y));
+        let ascii_panel = Panel::new(ascii_pos, Size::from((bpr, 10)));
         Self {
             stdout,
-            file: todo!(),
-            hex_panel: todo!(),
-            ascii_panel: todo!(),
+            file: None,
+            hex_panel,
+            ascii_panel,
             options,
-            cursor: (0, 0),
+            cursor: ascii_pos,
             active: ActivePanel::Ascii,
         }
     }
 
-    pub fn display(&self) -> Result<(), EditorError> {
-        let stdout = self.stdout;
+    pub fn open_file<P: AsRef<std::path::Path>>(&mut self, path: P) -> Result<(), EditorError> {
+        let file = std::fs::File::open(path)?;
+        let Options {
+            bytes_per_group,
+            groups_per_row,
+        } = self.options;
+
+        let bpr = bytes_per_group as usize * groups_per_row as usize;
+        let file = FileCursor::new(file, bpr * 10, bpr as u64);
+        self.file = Some(file);
+        self.display()
+    }
+
+    pub fn display(&mut self) -> Result<(), EditorError> {
+        let mut stdout = &self.stdout;
         let Options {
             bytes_per_group,
             groups_per_row,
@@ -59,7 +81,8 @@ impl Editor {
             MoveTo(0, 0),
             Clear(ClearType::All)
         )?;
-        let file = self.file.expect("there should be a file here!");
+        let file = self.file.as_mut().expect("there should be a file here!");
+        let file_pos = file.position()?;
         let buf = file.buffer();
         let chunks = buf.chunks(bpr.into());
 
@@ -74,10 +97,6 @@ impl Editor {
         // header - ASCII
         write!(stdout, " ASCII\r\n\n")?;
 
-        let file_pos = self
-            .file
-            .expect("there should be a file here!")
-            .position()?;
         // {offset}: [hex byte...] |[ascii]|
         for (l, c) in chunks.enumerate() {
             write!(stdout, "{:08X}: ", l as u64 * 10 + file_pos)?;
@@ -92,65 +111,80 @@ impl Editor {
             let str = str.replace('\n', &" ".on_dark_grey().to_string());
             write!(stdout, "|{str}|\r\n")?;
         }
-        let x = match self.active {
-            ActivePanel::Hex => cx * 3 + 8 + 3 + cx / bytes_per_group,
-            ActivePanel::Ascii => 8 + 3 + bpr * 3 + divs + 1 + cx,
-        };
-        execute!(
-            stdout,
-            MoveTo(x.into(), 2 + u16::from(cy)),
-            EndSynchronizedUpdate
-        )?;
+        let cur = self.active_panel().cursor();
+        execute!(stdout, MoveTo(cur.x, 2 + cur.y), EndSynchronizedUpdate)?;
         Ok(())
     }
 
+    fn active_panel(&self) -> &Panel {
+        match self.active {
+            ActivePanel::Hex => &self.hex_panel,
+            ActivePanel::Ascii => &self.ascii_panel,
+        }
+    }
+
     pub fn switch_panel(&mut self, move_type: &PanelMovement) {
-        let (current, other) = match self.active {
-            ActivePanel::Hex => (self.hex_panel, self.ascii_panel),
-            ActivePanel::Ascii => (self.ascii_panel, self.hex_panel),
+        let other = match self.active {
+            ActivePanel::Hex => &self.ascii_panel,
+            ActivePanel::Ascii => &self.hex_panel,
         };
+        let ob = other.bounds();
 
         match move_type {
-            PanelMovement::LeftEdge => {}
-            PanelMovement::RightEdge => {
-                self.view_cursor.0 = self.bytes_per_group * self.groups_per_row - 1;
+            PanelMovement::LeftEdge => {
+                self.cursor.x = ob.0.x;
             }
-            PanelMovement::KeepCursor => {}
-        }
-    }
-
-    pub fn cursor_left(&mut self) -> CursorMovement {
-        if self.cursor.0 == 0 {
-            CursorMovement::StuckEdge
-        } else {
-            self.cursor.0 -= 1;
-            CursorMovement::Moved
-        }
-    }
-
-    pub fn cursor_right(&mut self) -> CursorMovement {
-        if self.cursor.0 == self.options.bytes_per_group * self.options.groups_per_row - 1 {
-            CursorMovement::StuckEdge
-        } else {
-            self.cursor.0 += 1;
-            CursorMovement::Moved
+            PanelMovement::RightEdge => {
+                self.cursor.x = ob.1.x;
+            }
+            PanelMovement::KeepCursor => {
+                self.cursor.x = other.cursor().x;
+            }
         }
     }
 
     pub fn scroll(&mut self, direction: CursorDirection) -> Result<(), EditorError> {
         let file = self.file.as_mut().unwrap();
-        let pos = file.position()?;
-        self.cursor.0 += 1;
-        file.scroll();
+        file.scroll(direction);
         Ok(())
+    }
+
+    pub fn event_loop(&mut self) -> Result<(), EditorError> {
+        loop {
+            let event = match TermInput::poll_event() {
+                Ok(event) => event,
+                Err(e) => return self.quit(Some(e)),
+            };
+
+            match event {
+                Action::Left => self.active_panel(),
+                Action::Down => todo!(),
+                Action::Up => todo!(),
+                Action::Right => todo!(),
+                Action::SwitchPanel => todo!(),
+                Action::OnFocus => todo!(),
+                Action::OnBlur => todo!(),
+                Action::Mouse(position) => todo!(),
+                Action::Paste(_) => todo!(),
+                Action::Resize(size) => todo!(),
+                Action::UnboundKey => todo!(),
+                Action::Quit => todo!(),
+            };
+            self.display()?
+        }
+    }
+
+    fn quit<E: std::error::Error>(&mut self, err: Option<E>) -> Result<(), EditorError> {
+        execute!(self.stdout, LeaveAlternateScreen)?;
+        disable_raw_mode()?;
+        if let Some(err) = err {
+            eprintln!("{err}");
+        }
+        std::process::exit(0);
     }
 }
 
-pub enum CursorMovement {
-    StuckEdge,
-    Moved,
-}
-
+#[derive(Debug)]
 pub enum EditorError {}
 
 impl From<CursorError> for EditorError {
@@ -169,4 +203,25 @@ pub enum PanelMovement {
     LeftEdge,
     RightEdge,
     KeepCursor,
+}
+
+pub enum Action {
+    Left,
+    Down,
+    Up,
+    Right,
+    SwitchPanel,
+    OnFocus,
+    OnBlur,
+    Mouse(Position),
+    Paste(String),
+    Resize(Size),
+    UnboundKey,
+    Quit,
+}
+
+#[derive(Debug)]
+pub enum ActivePanel {
+    Hex,
+    Ascii,
 }

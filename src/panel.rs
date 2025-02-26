@@ -1,30 +1,90 @@
+use crate::stuff::*;
+
 pub struct Panel {
-    position: (u16, u16),
-    size: (u16, u16),
-    cursor: (u16, u16),
+    position: Position,
+    size: Size,
+    cursor: Position,
 }
 
 impl Panel {
-    pub fn new(position: (u16, u16), size: (u16, u16)) -> Self {
+    pub const fn new(position: Position, size: Size) -> Self {
         Self {
             position,
             size,
-            cursor: (0, 0),
+            cursor: Position { x: 0, y: 0 },
+        }
+    }
+
+    pub fn position(&self) -> &Position {
+        &self.position
+    }
+
+    pub fn size(&self) -> &Size {
+        &self.size
+    }
+
+    pub fn bounds(&self) -> (Position, Position) {
+        (self.position, self.position + self.size)
+    }
+
+    pub fn cursor(&self) -> &Position {
+        &self.cursor
+    }
+
+    pub fn move_cursor(&mut self, dir: CursorMovement) -> CursorMove {
+        let size = self.size;
+        let ref mut cursor = self.cursor;
+
+        match dir {
+            CursorMovement::Left if cursor.x > 0 => {
+                cursor.x -= 1;
+                CursorMove::Moved
+            }
+            CursorMovement::Down if cursor.y < size.height - 1 => {
+                cursor.y += 1;
+                CursorMove::Moved
+            }
+            CursorMovement::Up if cursor.y > 0 => {
+                cursor.y -= 1;
+                CursorMove::Moved
+            }
+            CursorMovement::Right if cursor.x < size.width - 1 => {
+                cursor.x += 1;
+                CursorMove::Moved
+            }
+            CursorMovement::LeftMost => {
+                cursor.x = 0;
+                CursorMove::Moved
+            }
+            CursorMovement::Bottom => {
+                cursor.y = size.height - 1;
+                CursorMove::Moved
+            }
+            CursorMovement::Top => {
+                cursor.y = 0;
+                CursorMove::Moved
+            }
+            CursorMovement::RightMost => {
+                cursor.x = size.width - 1;
+                CursorMove::Moved
+            }
+            _ => CursorMove::Blocked,
         }
     }
 }
 
-#[derive(Debug)]
-pub enum ActivePanel {
-    Hex,
-    Ascii,
+pub enum CursorMove {
+    Moved,
+    Blocked,
 }
 
-impl ActivePanel {
-    pub fn switch(&mut self) {
-        *self = match *self {
-            Self::Hex => Self::Ascii,
-            Self::Ascii => Self::Hex,
-        };
-    }
+pub enum CursorMovement {
+    Left,
+    Down,
+    Up,
+    Right,
+    LeftMost,
+    Bottom,
+    Top,
+    RightMost,
 }

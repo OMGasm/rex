@@ -1,11 +1,12 @@
 mod editor;
-mod input;
-mod view;
 mod file;
+mod input;
 mod panel;
+mod stuff;
+mod view;
 use clap::Parser;
-use editor::Editor;
-use std::{fs::File, io, path::PathBuf};
+use editor::{Editor, EditorError};
+use std::{io, path::PathBuf};
 
 #[derive(Parser, Debug)]
 struct CliArgs {
@@ -16,26 +17,26 @@ struct CliArgs {
     groups_per_row: u16,
 }
 
-fn main() -> io::Result<()> {
-    let args = CliArgs::parse();
-    let file = File::open(&args.file).expect("File not found");
-    let path = std::fs::canonicalize(&args.file)?;
+fn main() -> Result<(), EditorError> {
+    let CliArgs {
+        file: file_path,
+        bytes_per_group,
+        groups_per_row,
+        ..
+    } = CliArgs::parse();
+    let path = std::fs::canonicalize(&file_path)?;
 
     let mut editor = Editor::new(
         io::stdout(),
-        editor::Options{
+        editor::Options {
             bytes_per_group,
             groups_per_row,
-            .. Default::default()
-        }
+            ..Default::default()
+        },
     );
     editor.open_file(path)?;
+    editor.event_loop();
 
-    let res = editor.event_loop();
-
-    if let Err(e) = res {
-        eprintln!("{e}");
-    };
     Ok(())
 }
 

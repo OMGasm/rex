@@ -4,30 +4,14 @@ use std::{
     num::TryFromIntError,
 };
 
-pub struct FileCursor<F> {
-    file: F,
+pub struct FileCursor {
+    file: BufReader<File>,
     window_bytes: usize,
     window_line_bytes: u64,
 }
 
-impl<F> FileCursor<F> {
-    pub fn new(file: File) -> FileCursor<File> {
-        FileCursor::<File> {
-            file,
-            window_bytes: 0,
-            window_line_bytes: 0,
-        }
-    }
-}
-
-struct SizedCursor;
-
-impl FileCursor<File> {
-    pub fn set_window(
-        self,
-        window_bytes: usize,
-        window_line_bytes: u64,
-    ) -> FileCursor<BufReader<File>> {
+impl FileCursor {
+    pub fn new(file: File, window_bytes: usize, window_line_bytes: u64) -> FileCursor {
         assert_ne!(window_bytes, 0);
         assert_ne!(window_line_bytes, 0);
         assert_eq!(
@@ -35,14 +19,29 @@ impl FileCursor<File> {
             0,
             "Cursor's window_bytes must be divisible by window_line_bytes"
         );
-        FileCursor::<BufReader<File>> {
-            file: BufReader::with_capacity(window_bytes, self.file),
+        FileCursor {
+            file: BufReader::with_capacity(window_bytes, file),
+            window_bytes,
+            window_line_bytes,
+        }
+    }
+
+    pub fn set_window(self, window_bytes: usize, window_line_bytes: u64) -> FileCursor {
+        assert_ne!(window_bytes, 0);
+        assert_ne!(window_line_bytes, 0);
+        assert_eq!(
+            window_bytes as u64 % window_line_bytes,
+            0,
+            "Cursor's window_bytes must be divisible by window_line_bytes"
+        );
+        FileCursor {
+            file: BufReader::with_capacity(window_bytes, self.file.into_inner()),
             window_bytes,
             window_line_bytes,
         }
     }
 }
-impl FileCursor<BufReader<File>> {
+impl FileCursor {
     pub fn position(&mut self) -> Result<u64, CursorError> {
         Ok(self.file.stream_position()? / self.window_line_bytes)
     }
@@ -67,7 +66,7 @@ impl FileCursor<BufReader<File>> {
         Ok(())
     }
 
-    pub fn buffer(&mut self) -> &[u8]  {
+    pub fn buffer(&mut self) -> &[u8] {
         self.file.buffer()
     }
 }
