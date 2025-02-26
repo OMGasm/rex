@@ -1,4 +1,7 @@
-use std::{fs::File, io::{self, BufRead, BufReader, Seek, SeekFrom}};
+use std::{
+    fs::File,
+    io::{self, BufRead, BufReader, Seek, SeekFrom},
+};
 
 use crossterm::{
     cursor::MoveTo,
@@ -7,7 +10,10 @@ use crossterm::{
     terminal::{BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate},
 };
 
-use crate::{file::FileCursor, panel::ActivePanel};
+use crate::{
+    file::{CursorDirection, CursorError, FileCursor},
+    panel::ActivePanel,
+};
 
 pub struct Editor {
     stdout: io::Stdout,
@@ -34,13 +40,16 @@ impl Editor {
             ascii_panel: todo!(),
             options,
             cursor: (0, 0),
-            active: ActivePanel::Ascii
+            active: ActivePanel::Ascii,
         }
     }
 
     pub fn display(&self) -> Result<(), EditorError> {
         let stdout = self.stdout;
-        let Options{bytes_per_group, groups_per_row} = self.options;
+        let Options {
+            bytes_per_group,
+            groups_per_row,
+        } = self.options;
         use std::io::Write;
         let bpr = bytes_per_group * groups_per_row;
         let divs = groups_per_row - 1;
@@ -65,7 +74,10 @@ impl Editor {
         // header - ASCII
         write!(stdout, " ASCII\r\n\n")?;
 
-        let file_pos = self.file.expect("there should be a file here!").position()?;
+        let file_pos = self
+            .file
+            .expect("there should be a file here!")
+            .position()?;
         // {offset}: [hex byte...] |[ascii]|
         for (l, c) in chunks.enumerate() {
             write!(stdout, "{:08X}: ", l as u64 * 10 + file_pos)?;
@@ -99,7 +111,7 @@ impl Editor {
         };
 
         match move_type {
-            PanelMovement::LeftEdge => ,
+            PanelMovement::LeftEdge => {}
             PanelMovement::RightEdge => {
                 self.view_cursor.0 = self.bytes_per_group * self.groups_per_row - 1;
             }
@@ -108,30 +120,28 @@ impl Editor {
     }
 
     pub fn cursor_left(&mut self) -> CursorMovement {
-        if self.view_cursor.0 == 0 {
+        if self.cursor.0 == 0 {
             CursorMovement::StuckEdge
         } else {
-            self.view_cursor.0 -= 1;
+            self.cursor.0 -= 1;
             CursorMovement::Moved
         }
     }
 
     pub fn cursor_right(&mut self) -> CursorMovement {
-        if self.view_cursor.0 == self.bytes_per_group * self.groups_per_row - 1 {
+        if self.cursor.0 == self.options.bytes_per_group * self.options.groups_per_row - 1 {
             CursorMovement::StuckEdge
         } else {
-            self.view_cursor.0 += 1;
+            self.cursor.0 += 1;
             CursorMovement::Moved
         }
     }
 
-    pub fn scroll_down(&mut self) -> io::Result<()> {
-        let pos = self.file.position();
-        Ok(())
-    }
-
-    pub fn scroll_up(&mut self) -> io::Result<()> {
-        let (_, ref mut y) = self.view_cursor;
+    pub fn scroll(&mut self, direction: CursorDirection) -> Result<(), EditorError> {
+        let file = self.file.as_mut().unwrap();
+        let pos = file.position()?;
+        self.cursor.0 += 1;
+        file.scroll();
         Ok(())
     }
 }
@@ -139,6 +149,20 @@ impl Editor {
 pub enum CursorMovement {
     StuckEdge,
     Moved,
+}
+
+pub enum EditorError {}
+
+impl From<CursorError> for EditorError {
+    fn from(value: CursorError) -> Self {
+        todo!()
+    }
+}
+
+impl From<io::Error> for EditorError {
+    fn from(value: io::Error) -> Self {
+        todo!()
+    }
 }
 
 pub enum PanelMovement {
