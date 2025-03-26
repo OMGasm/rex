@@ -1,7 +1,7 @@
 use crate::{
     file::{CursorDirection, CursorError, FileCursor},
     input::TermInput,
-    panel::Panel,
+    panel::{CursorMove, CursorMovement, Panel},
     stuff::{Position, Size},
 };
 use crossterm::{
@@ -133,6 +133,13 @@ impl Editor {
         }
     }
 
+    fn active_panel_mut(&mut self) -> &mut Panel {
+        match self.active {
+            ActivePanel::Hex => &mut self.hex_panel,
+            ActivePanel::Ascii => &mut self.ascii_panel,
+        }
+    }
+
     pub fn switch_panel(&mut self, move_type: &PanelMovement) {
         let other = match self.active {
             ActivePanel::Hex => &self.ascii_panel,
@@ -167,18 +174,43 @@ impl Editor {
             };
 
             match event {
-                Action::Left => self.active_panel(),
-                Action::Down => todo!(),
-                Action::Up => todo!(),
-                Action::Right => todo!(),
-                Action::SwitchPanel => todo!(),
-                Action::OnFocus => todo!(),
-                Action::OnBlur => todo!(),
-                Action::Mouse(position) => todo!(),
-                Action::Paste(_) => todo!(),
-                Action::Resize(size) => todo!(),
-                Action::UnboundKey => todo!(),
-                Action::Quit => todo!(),
+                Action::Left => {
+                    let moved = self.active_panel_mut().move_cursor(CursorMovement::Left);
+                    if let CursorMove::Blocked = moved {
+                        self.switch_panel(&PanelMovement::RightEdge);
+                    }
+                }
+                Action::Down => {
+                    let moved = self.active_panel_mut().move_cursor(CursorMovement::Down);
+                    if let CursorMove::Blocked = moved {
+                        self.file
+                            .as_mut()
+                            .unwrap()
+                            .scroll(CursorDirection::Down(1))?
+                    }
+                }
+                Action::Up => {
+                    let moved = self.active_panel_mut().move_cursor(CursorMovement::Up);
+                    if let CursorMove::Blocked = moved {
+                        self.file.as_mut().unwrap().scroll(CursorDirection::Up(1))?
+                    }
+                }
+                Action::Right => {
+                    let moved = self.active_panel_mut().move_cursor(CursorMovement::Right);
+                    if let CursorMove::Blocked = moved {
+                        self.switch_panel(&PanelMovement::LeftEdge);
+                    }
+                }
+                Action::SwitchPanel => {
+                    self.switch_panel(&PanelMovement::KeepCursor);
+                }
+                Action::OnFocus => return Err(EditorError::NotImplemented),
+                Action::OnBlur => return Err(EditorError::NotImplemented),
+                Action::Mouse(position) => return Err(EditorError::NotImplemented),
+                Action::Paste(_) => return Err(EditorError::NotImplemented),
+                Action::Resize(size) => return Err(EditorError::NotImplemented),
+                Action::UnboundKey => continue,
+                Action::Quit => return self.quit::<io::Error>(None),
             };
             self.display()?
         }
@@ -194,17 +226,21 @@ impl Editor {
 }
 
 #[derive(Debug)]
-pub enum EditorError {}
+pub enum EditorError {
+    IOError(io::Error),
+    CursorError(CursorError),
+    NotImplemented,
+}
 
 impl From<CursorError> for EditorError {
     fn from(value: CursorError) -> Self {
-        todo!()
+        Self::CursorError(value)
     }
 }
 
 impl From<io::Error> for EditorError {
     fn from(value: io::Error) -> Self {
-        todo!()
+        Self::IOError(value)
     }
 }
 
