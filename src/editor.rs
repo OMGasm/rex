@@ -9,8 +9,8 @@ use crossterm::{
     execute, queue,
     style::Stylize,
     terminal::{
-        disable_raw_mode, BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate,
-        LeaveAlternateScreen,
+        disable_raw_mode, enable_raw_mode, BeginSynchronizedUpdate, Clear, ClearType,
+        EndSynchronizedUpdate, EnterAlternateScreen, LeaveAlternateScreen,
     },
 };
 use std::io::{self};
@@ -51,6 +51,16 @@ impl Editor {
             cursor: ascii_pos,
             active: ActivePanel::Ascii,
         }
+    }
+
+    pub fn grab_terminal(&mut self) -> Result<(), EditorError> {
+        enable_raw_mode()?;
+        Ok(execute!(self.stdout, EnterAlternateScreen)?)
+    }
+
+    pub fn release_terminal(&mut self) -> Result<(), EditorError> {
+        execute!(self.stdout, EndSynchronizedUpdate, LeaveAlternateScreen)?;
+        Ok(disable_raw_mode()?)
     }
 
     pub fn open_file<P: AsRef<std::path::Path>>(&mut self, path: P) -> Result<(), EditorError> {
@@ -175,8 +185,7 @@ impl Editor {
     }
 
     fn quit<E: std::error::Error>(&mut self, err: Option<E>) -> Result<(), EditorError> {
-        execute!(self.stdout, LeaveAlternateScreen)?;
-        disable_raw_mode()?;
+        self.release_terminal()?;
         if let Some(err) = err {
             eprintln!("{err}");
         }
