@@ -34,10 +34,13 @@ fn main() -> Result<(), EditorError> {
             ..Default::default()
         },
     );
+    editor.grab_terminal()?;
     editor.open_file(path)?;
-    editor.event_loop();
+    let result = editor.event_loop();
 
-    Ok(())
+    editor.release_terminal()?;
+
+    result
 }
 
 #[cfg(test)]
